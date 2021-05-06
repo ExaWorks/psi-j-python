@@ -8,7 +8,7 @@ from typing import Any, Optional, List, Dict, Tuple
 from distutils.version import StrictVersion
 
 from psi.j import InvalidJobException, SubmitException
-from psi.j import Job, JobExecutorConfig, JobState, JobStatus
+from psi.j import Job, JobExecutorConfig, JobState, JobStatus, JobSpec
 from psi.j import JobExecutor
 
 import radical.utils as ru
@@ -60,11 +60,11 @@ class RPJobExecutor(JobExecutor):
         self._tmgr.add_pilots(self._pilot)
         self._tasks: Dict[str, Tuple[Any, Any]] = dict()
 
-    def _pilot_state_cb(self, pilot: _rp.Pilot, rp_state: str):
+    def _pilot_state_cb(self, pilot: _rp.Pilot, rp_state: str) -> None:
 
         logger.info('pilot %s: %s', pilot.uid, pilot.state)
 
-    def _task_state_cb(self, task: _rp.Task, rp_state: str):
+    def _task_state_cb(self, task: _rp.Task, rp_state: str) -> None:
 
         jpsi_uid = task.name
         jpsi_job = self._tasks[jpsi_uid][0]
@@ -127,13 +127,18 @@ class RPJobExecutor(JobExecutor):
         # TODO: use resource spec
         # TODO: use meta data for jpsi uid
 
-        from_dict = {'name': job.id,
-                     'executable': job.spec.executable,
-                     'arguments': job.spec.arguments or [],
-                     'environment': job.spec.environment or {},
-                     'stdout': job.spec.stdout_path or '',
-                     'stderr': job.spec.stderr_path or '',
-                     'sandbox': job.spec.directory or ''}
+        spec: Optional[JobSpec] = job.spec
+
+        if not spec:
+            raise InvalidJobException('Missing specification')
+
+        from_dict: Dict[str, Any] = {'name': job.id,
+                                     'executable': spec.executable,
+                                     'arguments': spec.arguments or [],
+                                     'environment': spec.environment or {},
+                                     'stdout': spec.stdout_path or '',
+                                     'stderr': spec.stderr_path or '',
+                                     'sandbox': spec.directory or ''}
 
         return self._rp.TaskDescription(from_dict=from_dict)
 
@@ -163,7 +168,7 @@ class RPJobExecutor(JobExecutor):
         :return: The list of known tasks.
         """
 
-        return self._tmgr.list_tasks()
+        return [str(uid) for uid in self._tmgr.list_tasks()]
 
     def attach(self, job: Job, native_id: str) -> None:
         """
