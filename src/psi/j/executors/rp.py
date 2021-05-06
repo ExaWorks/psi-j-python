@@ -1,11 +1,9 @@
 """This module contains the RP :class:`~psi.j.JobExecutor`."""
 
-from __future__ import annotations
-
 import time
 import logging
 
-from typing import IO, Union, Any, Optional, Dict, List
+from typing import Any, Optional, List, Dict, Tuple
 
 from distutils.version import StrictVersion
 
@@ -60,14 +58,13 @@ class RPJobExecutor(JobExecutor):
                                         'runtime': 15})
         self._pilot = self._pmgr.submit_pilots(pd)
         self._tmgr.add_pilots(self._pilot)
-      # self._pmgr.wait_pilots(uids=self._pilot.uid, state=self._rp.PMGR_ACTIVE)
-        self._tasks = dict()
+        self._tasks: Dict[str, Tuple[Any, Any]] = dict()
 
-    def _pilot_state_cb(self, pilot, rp_state):
+    def _pilot_state_cb(self, pilot: _rp.Pilot, rp_state: str):
 
         logger.info('pilot %s: %s', pilot.uid, pilot.state)
 
-    def _task_state_cb(self, task, rp_state):
+    def _task_state_cb(self, task: _rp.Task, rp_state: str):
 
         jpsi_uid = task.name
         jpsi_job = self._tasks[jpsi_uid][0]
@@ -100,7 +97,6 @@ class RPJobExecutor(JobExecutor):
                            metadata=metadata)
         self._update_job_status(jpsi_job, status)
 
-
     def submit(self, job: Job) -> None:
         """
         Submits the specified :class:`~psi.j.Job` to the pilot.
@@ -121,7 +117,7 @@ class RPJobExecutor(JobExecutor):
         try:
             td = self._job_2_descr(job)
             task = self._tmgr.submit_tasks(td)
-            self._tasks[job.id] = [job, task]
+            self._tasks[job.id] = (job, task)
 
         except Exception as ex:
             raise SubmitException('Failed to submit job') from ex
@@ -151,9 +147,11 @@ class RPJobExecutor(JobExecutor):
             if job.status.state == JobState.NEW:
                 job._set_status(JobStatus(JobState.CANCELED))
                 return
-        _, task = self._tasks.get(job.id)
-        if not task:
+
+        if job.id not in self._tasks:
             raise ValueError('job not known')
+
+        _, task = self._tasks[job.id]
 
         self._tmgr.cancel_tasks(uids=task.uid)
 
@@ -181,8 +179,8 @@ class RPJobExecutor(JobExecutor):
         if job.status.state != JobState.NEW:
             raise InvalidJobException('Job must be in the NEW state')
 
-        task = self._tmgr.get_tasks(uids=native_id)
-        self._jobs[job.id] = [job, task]
+        task = self._tmgr.get_tasks(uids=[native_id])[0]
+        self._tasks[job.id] = (job, task)
 
         state = self._state_map[task.state]
         self._update_job_status(job, JobStatus(state, time=time.time()))
